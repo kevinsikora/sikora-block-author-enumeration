@@ -3,7 +3,7 @@
  * Plugin Name: Sikora Block Author Enumeration (Security)
  * Description: Stops bots from discovering usernames through ?author= URLs, the REST API, and oEmbed, while keeping admin author links working.
  * Version: 1.3.0
- * Author: <a href="https://SikoraCollective.com/">Sikora Collective</a>
+ * Author: <a href="https://SikoraCollective.com/" target="_blank" rel="noopener noreferrer">Sikora Collective</a>
  */
 
 // Exit if accessed directly — prevents direct file execution outside WordPress.
