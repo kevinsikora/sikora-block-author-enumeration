@@ -4,6 +4,22 @@ How to confirm the plugin works after you install it.
 
 Replace `example.com` with your domain in every command. Run the tests from a terminal with `curl` rather than a browser, because browsers remember 301 redirects and can show you an old result. If you use a caching plugin or a CDN such as Cloudflare, clear its cache after activating the plugin.
 
+## Automated runner
+
+From the plugin root (or `tests/`), run:
+
+```bash
+./tests/run-tests.sh https://example.com
+```
+
+The site URL is required. The author slug is **optional**; if you omit it, the archive check uses `your-author-slug` (a `200` or `404` both count as pass). Pass a real slug when you want to confirm a live author page:
+
+```bash
+./tests/run-tests.sh https://example.com your-author-slug
+```
+
+That executes the curl checks below, marks each as pass/fail/skip, and writes `tests/test-report.html`. Add `--optional` only when the plugin is deactivated and you want the §1 leak check.
+
 ## 1. See the leak first (optional)
 
 With the plugin **deactivated**, run:
