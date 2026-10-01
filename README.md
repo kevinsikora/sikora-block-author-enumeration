@@ -9,7 +9,7 @@ Blocks author enumeration via `?author=` URLs, REST users, oEmbed, sitemaps, and
 | **Requires at least** | 5.0 |
 | **Tested up to** | 6.8 |
 | **Requires PHP** | 7.0 |
-| **Stable tag** | 2.1.0 |
+| **Stable tag** | 2.2.0 |
 | **License** | [GPLv2 or later](https://www.gnu.org/licenses/gpl-2.0.html) |
 | **Author** | [Sikora Collective](https://sikoracollective.com/) |
 
@@ -95,41 +95,21 @@ Your host's firewall is blocking the request before WordPress runs. That still p
 
 ### How can I verify it works?
 
-With the plugin active, from a terminal (not a browser, which may cache 301s):
+Use the automated test runner in the `tests` directory. From the plugin root:
 
 ```bash
-curl -sI "https://example.com/?author=1"
+./tests/run-tests.sh https://example.com
 ```
 
-You should see a `301` to the homepage, not `/author/<username>/`. The same applies to `/?author_name=jane`.
-
-Logged out:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/users"
-```
-
-You should see `404`.
-
-Users sitemap:
-
-```bash
-curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-sitemap-users-1.xml"
-```
-
-You should see `404`.
-
-oEmbed:
-
-```bash
-curl -s "https://example.com/wp-json/oembed/1.0/embed?url=https://example.com/"
-```
-
-The response should have no `author_url`. `author_name` should be absent when it would have matched the login or nicename.
-
-For more verification steps, see [TESTING.md](tests/TESTING.md).
+The site URL is required. An author slug is optional. The script runs the checks documented in [`tests/TESTING.md`](tests/TESTING.md), prints pass/fail results, and writes `tests/test-report.html`. Prefer your site's canonical URL (for example `https://www.example.com`). See [`tests/TESTING.md`](tests/TESTING.md) for accepted status codes, optional flags, and notes about host firewalls or SEO plugins.
 
 ## Changelog
+
+### 2.2.0
+
+- Adds `tests/run-tests.sh` and `tests/TESTING.md` for automated verification with an HTML report.
+- FAQ verification steps now point to the test runner instead of duplicating curl commands.
+- Plugin display name is Sikora Block Author Enumeration (without the Security suffix).
 
 ### 2.1.0
 
@@ -170,6 +150,10 @@ For more verification steps, see [TESTING.md](tests/TESTING.md).
 - Initial release.
 
 ## Upgrade Notice
+
+### 2.2.0
+
+Adds an automated test runner under tests/. Verification docs point there; no settings changes.
 
 ### 2.1.0
 
