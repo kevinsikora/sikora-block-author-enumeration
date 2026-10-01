@@ -32,6 +32,14 @@ for q in "author=1" "author=1a" "author=1,2" "author=%201" "author[]=1" "p=1&aut
 
 **Pass:** every line shows `location: https://example.com/`. None should show `/author/...` or `NO REDIRECT`.
 
+Also block the slug-based bypass:
+
+```bash
+curl -sI "https://example.com/?author_name=admin" | grep -i -E "^HTTP|^location"
+```
+
+**Pass:** `301` to the homepage, not `/author/admin/`.
+
 Also try the value sent as form data instead of in the URL:
 
 ```bash
@@ -40,7 +48,33 @@ curl -si -X POST -d "author=1" "https://example.com/" | grep -i -E "^HTTP|^locat
 
 **Pass:** `301` to the homepage.
 
-## 4. Make sure nothing else broke
+## 4. REST, sitemap, and oEmbed
+
+Logged out, users REST should be gone:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/users"
+```
+
+**Pass:** `404`.
+
+Users sitemap should be gone:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-sitemap-users-1.xml"
+```
+
+**Pass:** `404`.
+
+oEmbed should not include `author_url`:
+
+```bash
+curl -s "https://example.com/wp-json/oembed/1.0/embed?url=https://example.com/" | grep -E '"author_url"|"author_name"' || echo "NO AUTHOR FIELDS"
+```
+
+**Pass:** no `author_url`. `author_name` only appears when the display name differs from the login/nicename.
+
+## 5. Make sure nothing else broke
 
 **Author archive pages still load.** Use an author slug from your site:
 
@@ -66,26 +100,22 @@ curl -sI "https://example.com/?s=test" | grep -i "^HTTP"
 
 **Pass:** `200`.
 
-## 5. Check the dashboard by hand
+## 6. Check the dashboard by hand
 
-- [ ] **Posts → All Posts:** click an author's name in the Author column. The address will contain `?author=1` and the list should filter normally.
+- [ ] **Posts → All Posts:** click an author's name in the Author column. The address should use `author_name=` (or still filter correctly) and the list should filter normally.
 - [ ] **Block editor:** open a post and change the author in the sidebar. If you use a Query Loop block, filter it by author and check that the preview updates.
 - [ ] **Users** page loads normally.
 
-## 6. Check for errors
+## 7. Check for errors
 
 If `WP_DEBUG_LOG` is turned on, look in `wp-content/debug.log` for any messages that mention `sikora-block-author-enumeration`. There shouldn't be any.
 
 ## What this plugin doesn't hide
 
-Usernames can still leak through these routes, which the plugin doesn't cover:
+Public author archives still work on purpose:
 
 ```bash
-curl -s "https://example.com/wp-json/wp/v2/users" | head -c 400
+curl -sI "https://example.com/author/your-author-slug/" | grep -i "^HTTP"
 ```
 
-```bash
-curl -sI "https://example.com/wp-sitemap-users-1.xml" | grep -i "^HTTP"
-```
-
-If the first command returns user `slug` values, or the second returns `200`, usernames are still exposed there.
+Themes may still print author nicenames in body classes or bylines. Login forms may still reveal whether a username exists.

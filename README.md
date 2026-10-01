@@ -1,98 +1,109 @@
 # Sikora Block Author Enumeration (Security)
 
-A lightweight WordPress plugin that stops **author enumeration** attacks. It redirects any front-end request containing an `?author=` parameter to the homepage, hides the REST API user list from visitors who aren't logged in, and removes the author link from oEmbed responses. It also keeps the admin "filter by author" links working on hosts whose firewall blocks `?author=`.
+Blocks author enumeration via `?author=` URLs, REST users, oEmbed, sitemaps, and XML-RPC, while keeping admin author filters working.
 
-- **Version:** 1.3.0
-- **Requires WordPress:** 5.0+
-- **Requires PHP:** 7.0+
-- **License:** GPL-2.0-or-later
-- **Author:** [Sikora Collective](https://sikoracollective.com/)
+| | |
+| --- | --- |
+| **Contributors** | sikoracollective |
+| **Tags** | security, author enumeration, rest-api, xml-rpc, privacy |
+| **Requires at least** | 5.0 |
+| **Tested up to** | 6.8 |
+| **Requires PHP** | 7.0 |
+| **Stable tag** | 2.1.0 |
+| **License** | [GPLv2 or later](https://www.gnu.org/licenses/gpl-2.0.html) |
+| **Author** | [Sikora Collective](https://sikoracollective.com/) |
 
-## The problem
+> `readme.txt` is the source of truth for plugin directory metadata and documentation. This file mirrors it for GitHub.
+
+## Description
+
+Sikora Block Author Enumeration stops bots from discovering WordPress usernames through common enumeration vectors, without breaking the block editor or normal author archives.
+
+### The problem
 
 By default, WordPress redirects `https://example.com/?author=1` to `https://example.com/author/<username>/`. By incrementing the number, bots can collect every valid username on a site, then use them in brute-force or credential-stuffing attacks against `wp-login.php`.
 
-The REST API gives away the same information: `/wp-json/wp/v2/users` lists users and their slugs to anyone who asks. So does oEmbed, the data other sites fetch to build link previews, through its `author_url` field.
+The REST API, oEmbed, the users sitemap, and XML-RPC author methods give away the same information through other doors.
 
-## What this plugin does
+### What this plugin does
 
-### Blocks `?author=` requests
+- **Blocks `?author=` and `?author_name=`** on the front end with a `301` redirect to the homepage. Values are never read or output; presence is enough. Encoded and array forms such as `?author=1a`, `?author=1,2`, and `?author[]=1` are blocked too. Pretty permalink author archives (`/author/jane/`) keep working.
+- **Hides REST `/wp/v2/users` routes** from anyone without the `edit_posts` capability (anonymous visitors and subscribers get `404`). Authors, editors, and administrators keep the routes for the block editor. Users without `list_users` only see authors with REST-visible published posts, and `slug` / `link` are stripped from responses.
+- **Removes leaking oEmbed fields.** `author_url` is always removed. `author_name` is removed when it matches the user's login or nicename (case-insensitive). Distinct display names are left in place.
+- **Disables the core users sitemap** so `/wp-sitemap-users-1.xml` is not generated.
+- **Removes XML-RPC listing methods** `wp.getUsers` and `wp.getAuthors`. Other XML-RPC features (including `wp.getUsersBlogs` for mobile apps) stay available.
+- **Rewrites admin author filter links** from `author=<id>` to `author_name=<slug>` on `edit.php` and `upload.php`, so host firewalls that block `?author=` no longer return `403` for administrators.
 
-On every front-end page load, if the request contains an `author` parameter (in the query string or POST body), the plugin sends a `301` redirect to the site homepage. No username is revealed.
+### What it does not affect
 
-It blocks the parameter **whatever its value**, because WordPress converts the value to an integer. That means variants like these also resolve to user IDs, and a plain numeric check would miss them:
-
-| Request            | Blocked |
-| ------------------ | ------- |
-| `/?author=1`       | ✅      |
-| `/?author=1a`      | ✅      |
-| `/?author=1,2`     | ✅      |
-| `/?author[]=1`     | ✅      |
-| `/author/jane/`    | ❌ — normal author archives keep working |
-
-### What it does *not* affect
-
-The check runs on the `template_redirect` hook (priority 1, before WordPress's own canonical redirect). That hook only fires for front-end page loads, so these are untouched:
+The front-end block runs on `template_redirect` (priority 1), so these stay untouched:
 
 - The WordPress admin dashboard
 - `admin-ajax.php` and WP-Cron
-- The REST API. The block editor calls endpoints such as `/wp-json/wp/v2/posts?author=1` and needs them to work.
+- The REST API (for example `/wp-json/wp/v2/posts?author=1` used by the block editor)
 
-### Hides the REST API user list
+### Other enumeration vectors (not covered)
 
-For visitors who aren't logged in, the plugin removes these two REST API routes, so they return a `404` (`rest_no_route`):
+This plugin does not disable public author archives. Usernames or slugs can also be exposed through:
 
-- `/wp-json/wp/v2/users` (the list of users)
-- `/wp-json/wp/v2/users/<id>` (a single user)
+- Author archive URLs such as `/author/<slug>/` (left working on purpose)
+- Author archive links or body classes in themes
+- Login error messages that distinguish bad usernames from bad passwords
 
-The same applies to the `?rest_route=/wp/v2/users` form. Logged-in users still get both routes, so the block editor's author selector and other admin screens keep working.
+For full coverage, combine this plugin with a firewall or security plugin where needed. Also make sure each user's **Display name** differs from their login username.
 
-### Removes the author link from oEmbed
+### Security notes
 
-WordPress's oEmbed responses include `author_url`, which points to `/author/<slug>/`. The plugin removes that one field from both the JSON and XML formats. Everything else stays, including the author's display name, title, thumbnail and embed code, so embeds of your posts on other sites keep working. The only visible difference is that apps that show the author in a preview show the name without a link.
+- Exits immediately if the file is accessed directly (outside WordPress).
+- Never reads, outputs, or stores the `author` or `author_name` value; it only checks whether the parameter is present (including via the raw query string).
+- Uses `wp_safe_redirect()`, which only redirects to the site's own host.
+- Admin author-link rewrites require `edit_posts` or `upload_files`, and only apply to same-site `wp-admin` `edit.php` / `upload.php` URLs. Rewritten links are escaped with `esc_url()`.
+- Includes an `index.php` file to discourage directory listing of the plugin folder.
 
-Other sites store embed data when a link is first pasted, so previews created before you installed the plugin may keep the old link until they refresh.
-
-### Keeps admin author links working behind host firewalls
-
-In the admin, clicking an author's name in the **Author** column normally opens a link such as `edit.php?post_type=post&author=7`. The **Mine** view and the Media Library's list view use the same format. Some hosts, including SiteGround, block every address that contains `author=` followed by a number. They do this at the server, before WordPress loads, so those links return a `403 Forbidden` even for administrators.
-
-On admin screens, the plugin rewrites those links to the equivalent `author_name` form, for example `edit.php?post_type=post&author_name=jane`. WordPress filters the list the same way, and the host's firewall lets it through. This applies to posts, pages, custom post types and the Media Library.
-
-It only changes a link when all of these are true:
-
-- The page is an admin screen. Front-end pages, feeds and the REST API are never affected, so no author slug is exposed publicly.
-- The link points to `edit.php` or `upload.php`.
-- Its `author` value is a single number that matches an existing user.
-
-One cosmetic side effect: after you click **Mine**, WordPress doesn't highlight it as the current view, because it looks for `author` in the address to decide that. The list is still filtered correctly.
-
-The plugin can't fix author filtering inside the block editor, such as a Query Loop block's author filter. The editor sends those requests to the REST API as `?author=7`, and a firewall like this blocks them before WordPress runs.
+There are no settings. The plugin works as soon as it is activated.
 
 ## Installation
 
 ### Upload through the dashboard
-1. Download `sikora-block-author-enumeration.zip`.
+
+1. Download the plugin zip.
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**.
 3. Choose the zip, click **Install Now**, then **Activate**.
 
 ### Manual (FTP/SFTP)
+
 1. Copy the `sikora-block-author-enumeration` folder into `wp-content/plugins/`.
 2. Activate it under **Plugins** in the dashboard.
 
-There are no settings. The plugin works as soon as it is activated.
+## Frequently Asked Questions
 
-## Verifying it works
+### Will this break the block editor?
 
-With the plugin active, run:
+No. REST requests such as `/wp-json/wp/v2/posts?author=1` are not redirected. Users who can edit posts still have access to the users routes the author selector needs.
+
+### Do author archive pages still work?
+
+Yes. Pretty permalinks like `/author/jane/` are left alone on purpose.
+
+### Why do my admin "filter by author" links use author_name?
+
+Some hosts (including SiteGround) block URLs that contain `author=` followed by a number before WordPress loads. The plugin rewrites those admin links to `author_name=<slug>` so the list still filters correctly.
+
+### What if `?author=1` returns 403 instead of 301?
+
+Your host's firewall is blocking the request before WordPress runs. That still protects you. Try `?author=1a` to reach the plugin.
+
+### How can I verify it works?
+
+With the plugin active, from a terminal (not a browser, which may cache 301s):
 
 ```bash
 curl -sI "https://example.com/?author=1"
 ```
 
-You should see `HTTP/... 301` with `Location: https://example.com/`, **not** a `/author/<username>/` URL.
+You should see a `301` to the homepage, not `/author/<username>/`. The same applies to `/?author_name=jane`.
 
-Then, logged out, run:
+Logged out:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/users"
@@ -100,49 +111,66 @@ curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/user
 
 You should see `404`.
 
-Finally, check the oEmbed data for your homepage:
+Users sitemap:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-sitemap-users-1.xml"
+```
+
+You should see `404`.
+
+oEmbed:
 
 ```bash
 curl -s "https://example.com/wp-json/oembed/1.0/embed?url=https://example.com/"
 ```
 
-The response should have `author_name` but no `author_url`.
+The response should have no `author_url`. `author_name` should be absent when it would have matched the login or nicename.
 
-If you get a `403` instead of a `301` on the first test, your host's firewall is blocking the request before WordPress runs. That still protects you. Try `?author=1a` to reach the plugin.
-
-## Other enumeration vectors (not covered)
-
-This plugin blocks the `?author=` parameter, the REST API user routes and the oEmbed author link. Usernames or user slugs can also be exposed through:
-
-- **Core sitemaps:** `/wp-sitemap-users-1.xml` (WordPress 5.5+)
-- **Author archive links/classes** in themes
-
-For full coverage, combine this plugin with a firewall or security plugin that restricts those endpoints. Also make sure each user's **Display name** differs from their login username.
-
-## Security notes
-
-- Exits right away if the file is accessed directly (outside WordPress).
-- Never reads, outputs or stores the `author` value. It only checks whether the parameter is present.
-- Uses `wp_safe_redirect()`, which only redirects to the site's own host.
-- Hides the REST user routes only from logged-out visitors. It doesn't change any user permissions.
-- Rewrites author links only on admin screens, which only logged-in users can see. Rewritten links are escaped with `esc_url()`, like the originals.
-- Includes an `index.php` file to stop directory listing of the plugin folder.
+For more verification steps, see [TESTING.md](TESTING.md).
 
 ## Changelog
 
+### 2.1.0
+
+- Disables the core users sitemap provider.
+- Removes XML-RPC `wp.getUsers` and `wp.getAuthors` methods.
+- Strips oEmbed `author_name` when it matches the login or nicename.
+- Hardens REST user responses: without `list_users`, limit queries to published authors and remove `slug` / `link`.
+- Detects author parameters in the raw `QUERY_STRING` (encoded / `[]` forms).
+- Admin author-link rewrites require `edit_posts` or `upload_files`.
+- Uses plain-text plugin Author plus Author URI instead of HTML in the header.
+
+### 2.0.0
+
+- Blocks front-end `?author_name=` requests the same way as `?author=`, closing a slug-based enumeration bypass.
+- Restricts REST `/wp/v2/users` routes to users with `edit_posts`, so subscribers can no longer enumerate usernames.
+- Admin author-link rewrites only apply to same-site `wp-admin` `edit.php` / `upload.php` URLs.
+
 ### 1.3.0
+
 - Rewrites admin author filter links (`edit.php` and `upload.php`) from `author=<id>` to `author_name=<slug>`, so host firewalls that block `?author=` no longer return a 403.
 
 ### 1.2.0
+
 - Removes `author_url` from oEmbed responses.
 
 ### 1.1.0
+
 - Hides the `/wp/v2/users` REST API routes from visitors who aren't logged in.
 
 ### 1.0.1
+
 - Fixed bypasses (`?author=1a`, `?author=1,2`, `?author[]=1`) by blocking every request with an `author` parameter.
 - Moved from `init` to `template_redirect` so REST API requests, and with them the block editor, are no longer redirected.
 - Switched to `wp_safe_redirect()`.
 
 ### 1.0.0
+
 - Initial release.
+
+## Upgrade Notice
+
+### 2.1.0
+
+Hardens REST, oEmbed, sitemaps, and XML-RPC author listing. No settings to configure; activate and go.
