@@ -12,7 +12,7 @@ From the plugin root (or `tests/`), run:
 ./tests/run-tests.sh https://example.com
 ```
 
-The site URL is required. The author slug is **optional**; if you omit it, the archive check uses `your-author-slug` (a `200` or `404` both count as pass). Pass a real slug when you want to confirm a live author page:
+The site URL is required. The author slug is **optional**; if you omit it, the archive check uses `your-author-slug`. Pass a real slug when you want to exercise a specific author URL:
 
 ```bash
 ./tests/run-tests.sh https://example.com your-author-slug
@@ -20,21 +20,33 @@ The site URL is required. The author slug is **optional**; if you omit it, the a
 
 That executes the curl checks below, marks each as pass/fail/skip, and writes `tests/test-report.html`. Add `--optional` only when the plugin is deactivated and you want the §1 leak check.
 
-## Hosting and other plugins can make tests fail
+Prefer the site’s canonical URL (for example `https://www.example.com`). Non-www and www hosts can redirect or behave differently.
 
-These checks assume **this** plugin is what handles author enumeration: a `301` to the homepage for `?author=` / `?author_name=`, a `404` for the users REST route and users sitemap, and a normal `200` (or `404`) for author archives.
+### Accepted “safe” status codes
 
-Other layers often do related blocking and will change those status codes, so the automated runner can report **FAIL** even when the site is still protected:
+The runner treats **enumeration blocked** as success, not only this plugin’s own `301`. That way host firewalls and SEO plugins do not fail the suite when they still prevent username leaks:
 
-- **Host firewalls / CDNs** (for example SiteGround) may return **`403`** for URLs that contain `author=` followed by a number, before WordPress loads. That blocks enumeration, but the test expects a plugin `301`. Variants such as `?author=1a` may still reach WordPress and pass.
-- **SEO plugins** (for example Yoast) may disable or redirect author archives, or remap sitemap URLs (for example `/wp-sitemap-users-1.xml` → `/author-sitemap.xml`). Author-archive and users-sitemap checks can then fail even though usernames are not exposed the way the suite expects.
-- **Non-www vs www URLs** can redirect or behave differently. Prefer the site’s canonical URL (for example `https://www.example.com`) when you run the tests.
+| Check | Pass when |
+| --- | --- |
+| `?author=` / bypasses / `author_name` / POST `author` | `301`/`302` to the homepage, **or** host **`403`**; never a Location of `/author/<user>/` |
+| REST `/wp/v2/users` (logged out) | **`404`**, **`401`**, or **`403`** (not a public user list) |
+| Core users sitemap URL | **`404`**, **`403`**, or **`3xx`** away from `/wp-sitemap-users-1.xml` |
+| Author archive URL | **`200`**, **`404`**, **`403`**, or **`3xx`** (archives disabled/redirected) |
+| REST `posts?author=1` | **`200`**, or host **`403`** |
+| oEmbed | no `author_url` |
+| Normal `?s=test` | **`200`** |
 
-If a failure matches one of those behaviors, treat it as an environment difference, not necessarily a bug in this plugin.
+## Hosting and other plugins
+
+Other layers often do related blocking and change status codes:
+
+- **Host firewalls / CDNs** (for example SiteGround) may return **`403`** for URLs that contain `author=` followed by a number, before WordPress loads. The automated tests count that as a pass.
+- **SEO plugins** (for example Yoast) may disable or redirect author archives, or remap sitemap URLs (for example `/wp-sitemap-users-1.xml` → `/author-sitemap.xml`). The suite accepts those safe outcomes for the archive and core sitemap checks.
+- **Non-www vs www URLs** can redirect or behave differently. Use the canonical host when you run the tests.
 
 ## 1. See the leak first (optional)
 
-With the plugin **deactivated**, run:
+With the plugin **deactivated** (and with any host rule that returns `403` for `author=` temporarily aside), run:
 
 ```bash
 curl -sI "https://example.com/?author=1" | grep -i -E "^HTTP|^location"
@@ -48,17 +60,17 @@ You'll see a `301` with `location: https://example.com/author/<username>/`. That
 curl -sI "https://example.com/?author=1" | grep -i -E "^HTTP|^location"
 ```
 
-**Pass:** `HTTP/2 301` and `location: https://example.com/`, with no username anywhere.
+**Pass:** `301`/`302` to the homepage with no `/author/` in `Location`, **or** host `403`.
 
 ## 3. Tricks attackers use to get around simple checks
 
 This runs six variants in one go (`-g` lets curl send the `[]` characters as-is):
 
 ```bash
-for q in "author=1" "author=1a" "author=1,2" "author=%201" "author[]=1" "p=1&author=1"; do printf "%-14s " "$q"; curl -gsI "https://example.com/?$q" | grep -i "^location" || echo "NO REDIRECT"; done
+for q in "author=1" "author=1a" "author=1,2" "author=%201" "author[]=1" "p=1&author=1"; do printf "%-14s " "$q"; curl -gsI "https://example.com/?$q" | grep -i -E "^HTTP|^location"; done
 ```
 
-**Pass:** every line shows `location: https://example.com/`. None should show `/author/...` or `NO REDIRECT`.
+**Pass:** each response is a homepage redirect or `403`. None should show `/author/<username>/`.
 
 Also block the slug-based bypass:
 
@@ -66,7 +78,7 @@ Also block the slug-based bypass:
 curl -sI "https://example.com/?author_name=admin" | grep -i -E "^HTTP|^location"
 ```
 
-**Pass:** `301` to the homepage, not `/author/admin/`.
+**Pass:** homepage redirect or `403`, not `/author/admin/`.
 
 Also try the value sent as form data instead of in the URL:
 
@@ -74,25 +86,25 @@ Also try the value sent as form data instead of in the URL:
 curl -si -X POST -d "author=1" "https://example.com/" | grep -i -E "^HTTP|^location"
 ```
 
-**Pass:** `301` to the homepage.
+**Pass:** homepage redirect or `403`.
 
 ## 4. REST, sitemap, and oEmbed
 
-Logged out, users REST should be gone:
+Logged out, users REST should not list users:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/users"
 ```
 
-**Pass:** `404`.
+**Pass:** `404`, `401`, or `403`.
 
-Users sitemap should be gone:
+Users sitemap at the core URL should not serve a public user list:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-sitemap-users-1.xml"
+curl -sI "https://example.com/wp-sitemap-users-1.xml" | grep -i -E "^HTTP|^location"
 ```
 
-**Pass:** `404`.
+**Pass:** `404`, `403`, or a `3xx` away from that URL.
 
 oEmbed should not include `author_url`:
 
@@ -104,21 +116,21 @@ curl -s "https://example.com/wp-json/oembed/1.0/embed?url=https://example.com/" 
 
 ## 5. Make sure nothing else broke
 
-**Author archive pages still load.** Use an author slug from your site:
+**Author archive URL.** Use an author slug from your site:
 
 ```bash
-curl -sI "https://example.com/author/your-author-slug/" | grep -i "^HTTP"
+curl -sI "https://example.com/author/your-author-slug/" | grep -i -E "^HTTP|^location"
 ```
 
-**Pass:** `200`. You'll get a `404` if that author has no published posts; that's normal WordPress behavior and not caused by the plugin.
+**Pass:** `200` (archive works), `404` (no posts), `403`, or `3xx` (for example Yoast disables author archives).
 
-**The REST API still answers.** This is what the block editor relies on:
+**REST posts filter.** The block editor relies on this; some hosts block `author=` entirely:
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" "https://example.com/wp-json/wp/v2/posts?author=1"
 ```
 
-**Pass:** `200`, not `301`.
+**Pass:** `200`, or host `403` (not a redirect that reveals `/author/<username>/`).
 
 **Normal pages aren't affected:**
 
@@ -140,10 +152,10 @@ If `WP_DEBUG_LOG` is turned on, look in `wp-content/debug.log` for any messages 
 
 ## What this plugin doesn't hide
 
-Public author archives still work on purpose:
+Public author archives may still work when nothing else disables them:
 
 ```bash
-curl -sI "https://example.com/author/your-author-slug/" | grep -i "^HTTP"
+curl -sI "https://example.com/author/your-author-slug/" | grep -i -E "^HTTP|^location"
 ```
 
-Themes may still print author nicenames in body classes or bylines. Login forms may still reveal whether a username exists.
+Themes may still print author nicenames in body classes or bylines. Login forms may still reveal whether a username exists. SEO plugins may still publish their own author sitemaps under a different URL.
