@@ -20,6 +20,18 @@ The site URL is required. The author slug is **optional**; if you omit it, the a
 
 That executes the curl checks below, marks each as pass/fail/skip, and writes `tests/test-report.html`. Add `--optional` only when the plugin is deactivated and you want the §1 leak check.
 
+## Hosting and other plugins can make tests fail
+
+These checks assume **this** plugin is what handles author enumeration: a `301` to the homepage for `?author=` / `?author_name=`, a `404` for the users REST route and users sitemap, and a normal `200` (or `404`) for author archives.
+
+Other layers often do related blocking and will change those status codes, so the automated runner can report **FAIL** even when the site is still protected:
+
+- **Host firewalls / CDNs** (for example SiteGround) may return **`403`** for URLs that contain `author=` followed by a number, before WordPress loads. That blocks enumeration, but the test expects a plugin `301`. Variants such as `?author=1a` may still reach WordPress and pass.
+- **SEO plugins** (for example Yoast) may disable or redirect author archives, or remap sitemap URLs (for example `/wp-sitemap-users-1.xml` → `/author-sitemap.xml`). Author-archive and users-sitemap checks can then fail even though usernames are not exposed the way the suite expects.
+- **Non-www vs www URLs** can redirect or behave differently. Prefer the site’s canonical URL (for example `https://www.example.com`) when you run the tests.
+
+If a failure matches one of those behaviors, treat it as an environment difference, not necessarily a bug in this plugin.
+
 ## 1. See the leak first (optional)
 
 With the plugin **deactivated**, run:
