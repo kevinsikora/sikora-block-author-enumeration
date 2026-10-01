@@ -1,4 +1,4 @@
-=== Sikora Block Author Enumeration (Security) ===
+=== Sikora Block Author Enumeration ===
 Contributors: sikoracollective
 Tags: security, author enumeration, rest-api, xml-rpc, privacy
 Requires at least: 5.0

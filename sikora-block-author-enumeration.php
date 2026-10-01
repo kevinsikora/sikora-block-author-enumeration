@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: Sikora Block Author Enumeration (Security)
+ * Plugin Name: Sikora Block Author Enumeration
  * Description: Stops bots from discovering usernames through ?author= URLs, the REST API, and oEmbed, while keeping admin author links working.
  * Version: 2.1.0
  * Author: Sikora Collective
