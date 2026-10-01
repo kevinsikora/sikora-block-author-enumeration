@@ -1,4 +1,4 @@
-# Sikora Block Author Enumeration (Security)
+# Sikora Block Author Enumeration
 
 Blocks author enumeration via `?author=` URLs, REST users, oEmbed, sitemaps, and XML-RPC, while keeping admin author filters working.
 
@@ -127,7 +127,7 @@ curl -s "https://example.com/wp-json/oembed/1.0/embed?url=https://example.com/"
 
 The response should have no `author_url`. `author_name` should be absent when it would have matched the login or nicename.
 
-For more verification steps, see [TESTING.md](TESTING.md).
+For more verification steps, see [TESTING.md](tests/TESTING.md).
 
 ## Changelog
 
